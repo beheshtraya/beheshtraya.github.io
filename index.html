@@ -1,7 +1,7 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-<!-- v1.4.0 -->
+<!-- v1.5.1 -->
 <meta http-equiv="X-UA-Compatible" content="IE=Edge" />
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
@@ -16,8 +16,7 @@
 (function() {
     "use strict";
     var Button = {},
-        pgCount,
-        curPg;
+        pageLabels = [];
 
     /**
      * Shorthand helper function to getElementById
@@ -72,6 +71,7 @@
 
         var Sidebar = {},
             loadedThumbsArray = [],
+            thumbnailPositions = [],
             lastScroll = 0,
             sidebar,
             thumbnailBar,
@@ -81,16 +81,27 @@
             bookmarkPanel,
             searchPanel,
             isSearchLoaded,
-            searchInput;
+            searchInput,
+            thumbnailScrollPt = 0,
+            bookmarkScrollPt = 0,
+            searchScrollPt = 0,
+            curPg,
+            pgCount,
+            MAX_THUMBNAIL_WIDTH = 160,
+            MAX_THUMBNAIL_HEIGHT = 200;
 
         /**
          * Performs the setup for the sidebar
+         * @param initialPage Current page
+         * @param pageCount Page count
          * @param bounds Page bounds array
          * @param thumbnailType Image type used for thumbnails
          * @param bookmarks Object containing any bookmarks
          */
-        Sidebar.setup = function (bounds, thumbnailType, bookmarks) {
+        Sidebar.setup = function (initialPage, pageCount, bounds, thumbnailType, bookmarks) {
 
+            curPg = initialPage;
+            pgCount = pageCount;
             Button.outlines = d('btnOutlines');
             Button.thumbnails = d('btnThumbnails');
             Button.search = d('btnSearch');
@@ -128,6 +139,9 @@
             if (bookmarks.length > 0) {
                 Sidebar.setBookmarks(bookmarks);
             }
+            bookmarkScrollPt = bookmarkPanel.scrollTop;
+            searchScrollPt = searchPanel.scrollTop;
+            thumbnailBar.scrollTop = thumbnailScrollPt;
         };
 
         Sidebar.openSidebar = function() {
@@ -149,10 +163,20 @@
          * Display the thumbnail panel in the sidebar
          */
         Sidebar.switchToThumbnails = function () {
+            if (bookmarkPanel.className == "visible") {
+                bookmarkScrollPt = thumbnailBar.scrollTop;
+            }
+            if (searchPanel.className == "visible") {
+                searchScrollPt = thumbnailBar.scrollTop;
+            }
+
             thumbnailPanel.className = "visible";
             bookmarkPanel.className = "hidden";
             searchPanel.className = "hidden";
-            Sidebar.scrollToPage(curPg);
+            if (sidebar.className.indexOf("open") !== -1) {
+                loadVisibleThumbnails();
+                updateThumbnailPanelToCurrentPage();
+            }
             Button.thumbnails.className = 'disabled btn';
             Button.outlines.className = 'btn';
             Button.search.className = 'btn';
@@ -162,15 +186,30 @@
          * Display the bookmarks panel in the sidebar
          */
         Sidebar.switchToBookmarks = function () {
+            if (searchPanel.className == "visible") {
+                searchScrollPt = thumbnailBar.scrollTop;
+            }
+            if (thumbnailPanel.className == "visible") {
+                thumbnailScrollPt = thumbnailBar.scrollTop;
+            }
+
             thumbnailPanel.className = "hidden";
             bookmarkPanel.className = "visible";
             searchPanel.className = "hidden";
             Button.thumbnails.className = 'btn';
             Button.outlines.className = 'disabled btn';
             Button.search.className = 'btn';
+            thumbnailBar.scrollTop = bookmarkScrollPt;
         };
 
         Sidebar.switchToSearch = function() {
+            if (bookmarkPanel.className == "visible") {
+                bookmarkScrollPt = thumbnailBar.scrollTop;
+            }
+            if (thumbnailPanel.className == "visible") {
+                thumbnailScrollPt = thumbnailBar.scrollTop;
+            }
+
             thumbnailPanel.className = "hidden";
             bookmarkPanel.className = "hidden";
             searchPanel.className = "visible";
@@ -194,6 +233,7 @@
                 IDRViewer.loadSearch(loadListener, progressListener);
             }
             searchInput.focus();
+            thumbnailBar.scrollTop = searchScrollPt;
         };
 
         /**
@@ -202,12 +242,10 @@
          */
         var loadThumbnailFrames = function (bounds) {
             var heights = [];
-            var MAXWIDTH = 160;
-            var MAXHEIGHT = 200;
             // Calculate height for max width of 160px and max height of 200px
             for (var i = 0; i < bounds.length; i++) {
-                var height = Math.floor(bounds[i][1] * (MAXWIDTH / bounds[i][0]));
-                heights[i] = (bounds[i][0] > bounds[i][1] || height <= MAXHEIGHT) ? height : MAXHEIGHT;
+                var height = Math.floor(bounds[i][1] * (MAX_THUMBNAIL_WIDTH / bounds[i][0]));
+                heights[i] = (bounds[i][0] > bounds[i][1] || height <= MAX_THUMBNAIL_HEIGHT) ? height : MAX_THUMBNAIL_HEIGHT;
             }
 
             function makeThumbnailClickHandler(pg) {
@@ -226,17 +264,37 @@
                 ele.id = "thumb" + page;
                 ele.onclick = makeThumbnailClickHandler(page);
                 ele.setAttribute('title', 'Page ' + page);
-                ele.innerHTML = '<img src="assets/loading.gif"/>';
+                var margin = Math.floor((heights[page - 1] - 42) / 2);
+                ele.innerHTML = '<div class="spinner" style="margin-top: ' + margin + 'px;"></div>';
                 thumbnailPanel.appendChild(ele);
+            }
+
+            for (page = 1; page <= bounds.length; page++) {
+                thumbnailPositions[page - 1] = thumbnailPanel.children[page - 1].offsetTop;
             }
         };
 
         var handleThumbnailBarScroll = function () {
             var scrollTop = thumbnailBar.scrollTop;
             lastScroll = scrollTop;
+            showVisibleSpinners();
             setTimeout(function () {
                 loadVisibleThumbnails(scrollTop);
             }, 500);
+        };
+
+        var showVisibleSpinners = function() {
+            var startY = thumbnailBar.scrollTop;
+            var endY = startY + thumbnailBar.clientHeight;
+            for (var index = 0; index < pgCount; index++) {
+                if (!loadedThumbsArray[index]) {
+                    if (thumbnailPositions[index] + MAX_THUMBNAIL_WIDTH > startY && thumbnailPositions[index] < endY) {
+                        ClassHelper.addClass(thumbnailPanel.children[index].firstChild, "spinning");
+                    } else {
+                        ClassHelper.removeClass(thumbnailPanel.children[index].firstChild, "spinning");
+                    }
+                }
+            }
         };
 
         var loadVisibleThumbnails = function (scrollTop) {
@@ -252,7 +310,7 @@
                         break;
                     }
                     if (curThumb.offsetTop + curThumb.clientHeight > thumbnailBar.scrollTop) {
-                        curThumb.children[0].setAttribute("src", "thumbnails/" + (thumbIndex + 1) + '.' + imageType);
+                        curThumb.innerHTML = '<img src="thumbnails/' + (thumbIndex + 1) + '.' + imageType + '" />';
                         loadedThumbsArray[thumbIndex] = true;
                     }
                 }
@@ -262,11 +320,18 @@
         /**
          * Scrolls the thumbnail bar to a specific page and adds currentPageThumbnail class.
          * @param page Page to scroll to
-         * @param page2 Optional second page
          */
-        Sidebar.scrollToPage = function (page, page2) {
-            var curThumb = thumbnailPanel.children[page - 1];
-            if (curThumb.className != "thumbnail currentPageThumbnail") {
+        Sidebar.handlePageChange = function (page) {
+            curPg = page;
+            if (thumbnailPanel.className === "visible") {
+                updateThumbnailPanelToCurrentPage();
+            }
+            scrollSidebar = true;
+        };
+
+        var updateThumbnailPanelToCurrentPage = function() {
+            var curThumb = thumbnailPanel.children[curPg - 1];
+            if (curThumb.className !== "thumbnail currentPageThumbnail") {
 
                 for (var i = 0; i < pgCount; i++) {
                     thumbnailPanel.children[i].className = "thumbnail";
@@ -278,10 +343,6 @@
                     thumbnailBar.scrollTop = thumbnailBar.scrollTop + curThumb.getBoundingClientRect().top - d('leftContent').getBoundingClientRect().top;
                 }
             }
-            if (typeof page2 != 'undefined') {
-                thumbnailPanel.children[page2 - 1].className = "thumbnail currentPageThumbnail";
-            }
-            scrollSidebar = true;
         };
 
         Sidebar.setBookmarks = function (bookmarks) {
@@ -314,7 +375,7 @@
         return Sidebar;
     })();
 
-    var populateGoBtn = function () {
+    var populateGoBtn = function (initialPage, pgCount) {
         Button.go.className = "";
         Button.go.innerHTML = "";
         for (var i = 1; i <= pgCount; i++) {
@@ -323,7 +384,7 @@
             opt.innerHTML = pageLabels.length ? pageLabels[i - 1] : String(i);
             Button.go.appendChild(opt);
         }
-        Button.go.selectedIndex = curPg - 1;
+        Button.go.selectedIndex = initialPage - 1;
     };
 
     var handleGoBtn = function () {
@@ -346,7 +407,7 @@
 
     var handlePageChange = function (data) {
         d('pgCount').innerHTML = getPageString(data.page, data.pagecount);
-        Sidebar.scrollToPage(data.page);
+        Sidebar.handlePageChange(data.page);
         Button.go.selectedIndex = data.page - 1;
 
         Button.prev.className = data.isFirstPage ? 'disabled btn' : 'btn';
@@ -378,7 +439,7 @@
         this.blur();
     };
 
-    var setupLayoutSwitching = function (layout, availableLayouts, isMobile) {
+    var setupLayoutSwitching = function (pgCount, layout, availableLayouts, isMobile) {
 
         if (!isMobile) {
 
@@ -424,8 +485,6 @@
             Button.fullscreen.className = "btn closed";
         }
     };
-
-    var pageLabels = [];
 
     function getPageString(page, pageCount) {
         var result = "/ " + pageCount;
@@ -528,14 +587,12 @@
 
         // Misc setup
         document.title = data.title ? data.title : data.fileName;
-        curPg = data.page;
         updateSelectionButtons(data.selectMode);
         pageLabels = data.pageLabels;
-        pgCount = data.pagecount;
 
-        populateGoBtn();
+        populateGoBtn(data.page, data.pagecount);
 
-        Sidebar.setup(data.bounds, data.thumbnailType, data.bookmarks);
+        Sidebar.setup(data.page, data.pagecount, data.bounds, data.thumbnailType, data.bookmarks);
         d('pgCount').innerHTML = getPageString(data.page, data.pagecount);
 
         if (IDRViewer.isFullscreenEnabled()) {
@@ -547,7 +604,7 @@
             Button.fullscreen.parentNode.removeChild(Button.fullscreen);
         }
 
-        setupLayoutSwitching(data.layout, data.availableLayouts, data.isMobile);
+        setupLayoutSwitching(data.pagecount, data.layout, data.availableLayouts, data.isMobile);
         Button.zoom.value = IDRViewer.ZOOM_AUTO;
 
         // Add event listeners
@@ -612,7 +669,7 @@
         right: 0;
         position: absolute;
         overflow-y: scroll;
-        background-color: rgba(0,0,0,0.5);
+        background-color: #eee;
         -webkit-overflow-scrolling: touch;
     }
     #btnOutlines {
@@ -638,31 +695,34 @@
     #goBtn, #zoomBtn, #viewBtn {
         height: 25px;
     }
-	#goBtn {
-		width: 55px;
-	}
+    #goBtn {
+        width: 55px;
+    }
     #viewBtn {
         width: 105px;
     }
-	#zoomBtn {
-		width: 95px;
-	}
+    #zoomBtn {
+        width: 95px;
+    }
     .thumbnail {
         cursor: pointer;
         display: block;
-        padding: 5px 0;
+        padding: 8px 0;
         margin: 0 auto;
         text-align: center;
     }
     .thumbnail img{
         max-width: 160px;
+        border-radius: 5px;
+        border: 1px solid #bbb;
     }
-    .currentPageThumbnail {
-        background-color: #777777;
+    .currentPageThumbnail, .thumbnail:hover {
+        background-color: #ddd;
     }
-    .thumbnail:hover {
-        background-color: #CCCCCC;
+    .currentPageThumbnail img, .thumbnail:hover img {
+        border: 1px solid #999;
     }
+
     #thumbnailPanel.visible, #outlinePanel.visible, #searchPanel.visible {
         display: inline;
     }
@@ -678,13 +738,13 @@
         padding-right: 0;
     }
     #outlinePanel li {
-        color: white;
+        color: #333;
         padding: 2px;
         font-family: Arial,serif;
         font-size: 15px;
     }
     #outlinePanel li:hover {
-        background-color: rgba(0,0,0,0.3);
+        background-color: #ddd;
         cursor: pointer;
     }
     #searchPanel {
@@ -692,7 +752,7 @@
         font-size: 14px;
     }
     #searchPanel * {
-        color: white;
+        color: #333;
         margin: 5px;
     }
     #searchPanel #searchInput {
@@ -719,6 +779,9 @@
         display: block;
         word-wrap: break-word;
     }
+    #searchPanel .result:hover {
+        background-color: #ddd;
+    }
 
     body {
         margin: 0;
@@ -743,7 +806,6 @@
 
     #controls {
         height: 44px;
-        line-height: 44px;
         position: fixed;
         text-align: center;
         top: 0;
@@ -751,6 +813,11 @@
         right: 0;
         transition: 0.3s ease 0s;
     }
+    
+    #controls select {
+        margin-top: 10px;
+    }
+    
     #controls-left {
         display: inline-block;
         left: 0;
@@ -786,12 +853,12 @@
         opacity: 0.4;
     }
 
-	.light-theme #goBtn,
-	.light-theme #zoomBtn,
-	.light-theme #viewBtn {
+    .light-theme #goBtn,
+    .light-theme #zoomBtn,
+    .light-theme #viewBtn {
         background-color: #9aa8b6;
         color: white;
-		border: 1px solid #7b8793;
+        border: 1px solid #7b8793;
     }
 
     .dark-theme #idrviewer {
@@ -817,12 +884,12 @@
         opacity: 0.2;
     }
 
-	.dark-theme #goBtn,
-	.dark-theme #zoomBtn,
-	.dark-theme #viewBtn {
+    .dark-theme #goBtn,
+    .dark-theme #zoomBtn,
+    .dark-theme #viewBtn {
         background-color: #656565;
         color: white;
-		border: 1px solid #000;
+        border: 1px solid #000;
     }
 
     #idrviewer {
@@ -831,6 +898,24 @@
         left: 0;
         right: 0;
         position: absolute;
+    }
+
+    .spinner {
+        border: 6px solid #bbb;
+        border-top: 6px solid #3c9fe1;
+        border-radius: 50%;
+        width: 30px;
+        height: 30px;
+        margin: 0 auto;
+    }
+
+    .spinning {
+        animation: spin 1s linear infinite;
+    }
+
+    @keyframes spin {
+        0% { transform: rotate(0deg); }
+        100% { transform: rotate(360deg); }
     }
 
 </style>
