@@ -1,1 +1,0 @@
-IDRViewer.config = {"pagecount":2,"title":"transcript","author":"","fileName":"transcript.pdf","bounds":[[3813,5335],[3828,5341]],"bookmarks":[],"thumbnailType":"jpg","pageType":"html","pageLabels":[]};
